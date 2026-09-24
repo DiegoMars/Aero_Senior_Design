@@ -1,69 +1,23 @@
-// How header files will be installed
-#include "connections/MAVLink.h"
-#include "connections/ssh.h"
-#include "drivers/Payload.h"
-#include "drivers/Plane.h"
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN // Prevents windows.h from loading old winsock.h
+#endif
 
-#include <iostream>
-#include <string>
+#include "ssh.h"
+// #include <iostream>
+// #include <string>
 #include <mutex>
-#include <thread>
+#include <thread> // Remember to use jthreads over threads
 #include <atomic>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <libssh2.h>
-using namespace std;
 
-mutex sshMutex;
-atomic<bool> running{true};
-
-// Change this to whatever you are using, will eventually be able to change through the GUI
-// static const char *raspIP = "10.109.70.209";
-static const char *raspHostName = "ieeeRasp";
-static const char *username = "user_ieee";
-static const char *pass = "pass_ieee8333";
-
-void readerThreadFunc(LIBSSH2_CHANNEL* channel){
-    char buf[4096];
-    while (running.load()){
-        ssize_t n;
-        {
-            lock_guard<mutex> lock(sshMutex);
-            n = libssh2_channel_read(channel, buf, sizeof(buf));
-        } // releases lock after this
-
-        if (n > 0) {
-            fwrite(buf, 1, n, stdout);
-            fflush(stdout);
-            continue;
-        }
-
-        if (n == LIBSSH2_ERROR_EAGAIN) {
-            this_thread::sleep_for(chrono::milliseconds(20));
-            continue;
-        }
-
-        lock_guard<mutex> lock(sshMutex);
-        if (libssh2_channel_eof(channel)) {
-            printf("[remote shell closed]\n");
-            running.store(false);
-            break;
-        }
-    }
+// ### Public ###
+sshConnection::sshConnection(sshConnectionInfo connectionInfo){
+    this->connectionInfo = connectionInfo;
 }
 
-void printWinsockError(const char* func) {
-    int err = WSAGetLastError();
-    char* msgBuf = nullptr;
-    FormatMessageA(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPSTR)&msgBuf, 0, nullptr);
-    printf("%s failed: %d (%s)\n", func, err, msgBuf ? msgBuf : "unknown error");
-    LocalFree(msgBuf);
-}
-
-int main() {
+void sshConnection::threadFunction(){
     WSADATA wsaData;
     int iResult;
 
@@ -71,7 +25,8 @@ int main() {
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
     if (iResult != 0) {
         printf("WSAStartup failed: %d\n", iResult);
-        return 1;
+        return;
+        // return 1;
     }
     printf("WSAStartup succeeded!\n");
 
@@ -83,20 +38,23 @@ int main() {
     iResult = getaddrinfo(raspHostName, "22", &hints, &result);
     if (iResult != 0) {
         printf("getaddrinfo failed: %d (%s)\n", iResult, gai_strerrorA(iResult));
-        return 1;
+        return;
+        // return 1;
     }
 
     SOCKET sock = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (sock == INVALID_SOCKET) {
         printWinsockError("socket");
-        return 1;
+        return;
+        // return 1;
     }
     printf("Sock created!\n");
 
     iResult = connect(sock, result->ai_addr, result->ai_addrlen);
     if (iResult != 0) {
         printWinsockError("connect");
-        return 1;
+        return;
+        // return 1;
     }
 
     // This could be a little finicky, so give time between code runs
@@ -104,30 +62,35 @@ int main() {
     LIBSSH2_SESSION* session = libssh2_session_init();
     if (!session) {
         printf("libssh2_session_init failed\n");
-        return 1;
+        return;
+        // return 1;
     }
     printf("Session Started!\n");
 
     int rc = libssh2_session_handshake(session, sock);
     if (rc != 0) {
         printf("handshake failed: %d\n", rc);
-        return 1;
+        return;
+        // return 1;
     }
     printf("Session handshake succeeded!\n");
 
+    // Use the sshConnectionInfo struct here
     rc = libssh2_userauth_password(session, username, pass);
     if (rc != 0) {
         char* errmsg;
         int errlen;
         libssh2_session_last_error(session, &errmsg, &errlen, 0);
         printf("auth failed: %s\n", errmsg);
-        return 1;
+        return;
+        // return 1;
     }
 
     LIBSSH2_CHANNEL* channel = libssh2_channel_open_session(session);
     if (!channel) {
         printf("channel_open_session failed\n");
-        return 1;
+        return;
+        // return 1;
     }
     printf("Channel Opened!\n");
 
@@ -135,13 +98,15 @@ int main() {
     rc = libssh2_channel_request_pty(channel, "xterm");
     if (rc != 0) {
         printf("request_pty failed: %d\n", rc);
-        return 1;
+        return;
+        // return 1;
     }
 
     rc = libssh2_channel_shell(channel);
     if (rc != 0) {
         printf("channel_shell failed: %d\n", rc);
-        return 1;
+        return;
+        // return 1;
     }
     printf("Interactive shell started!\n");
 
@@ -178,6 +143,45 @@ int main() {
     closesocket(sock);
     WSACleanup();
     printf("Cleaned up\n");
+}
 
-    return 0;
+// ### Private ###
+void sshConnection::printWinsockError(const char* func) {
+    int err = WSAGetLastError();
+    char* msgBuf = nullptr;
+    FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&msgBuf, 0, nullptr);
+    printf("%s failed: %d (%s)\n", func, err, msgBuf ? msgBuf : "unknown error");
+    LocalFree(msgBuf);
+}
+
+void sshConnection::readerThreadFunc(LIBSSH2_CHANNEL* channel){
+    char buf[4096];
+    while (running.load()){
+        ssize_t n;
+        {
+            lock_guard<mutex> lock(sshMutex);
+            n = libssh2_channel_read(channel, buf, sizeof(buf));
+        } // releases lock after this
+
+        if (n > 0) {
+            fwrite(buf, 1, n, stdout);
+            fflush(stdout);
+            continue;
+        }
+
+        if (n == LIBSSH2_ERROR_EAGAIN) {
+            this_thread::sleep_for(chrono::milliseconds(20));
+            continue;
+        }
+
+        lock_guard<mutex> lock(sshMutex);
+        if (libssh2_channel_eof(channel)) {
+            printf("[remote shell closed]\n");
+            running.store(false);
+            break;
+        }
+    }
 }
