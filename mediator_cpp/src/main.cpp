@@ -1,3 +1,9 @@
+// How header files will be installed
+#include "connections/MAVLink.h"
+#include "connections/ssh.h"
+#include "drivers/Payload.h"
+#include "drivers/Plane.h"
+
 #include <iostream>
 #include <string>
 #include <mutex>
