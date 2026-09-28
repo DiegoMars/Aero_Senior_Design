@@ -3,6 +3,7 @@
 
 #include <string>
 #include <mutex>
+#include <atomic>
 #include <libssh2.h>
 using namespace std;
 

@@ -25,7 +25,7 @@ void sshConnection::threadFunction(){
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
     if (iResult != 0) {
         printf("WSAStartup failed: %d\n", iResult);
-        return;
+        return; // Need some way to deal with errors from threads
         // return 1;
     }
     printf("WSAStartup succeeded!\n");
@@ -35,7 +35,7 @@ void sshConnection::threadFunction(){
     struct addrinfo *result;
     hints.ai_family = AF_INET;       // IPv4
     hints.ai_socktype = SOCK_STREAM; // TCP
-    iResult = getaddrinfo(raspHostName, "22", &hints, &result);
+    iResult = getaddrinfo(connectionInfo.hostName.c_str(), "22", &hints, &result);
     if (iResult != 0) {
         printf("getaddrinfo failed: %d (%s)\n", iResult, gai_strerrorA(iResult));
         return;
@@ -76,7 +76,7 @@ void sshConnection::threadFunction(){
     printf("Session handshake succeeded!\n");
 
     // Use the sshConnectionInfo struct here
-    rc = libssh2_userauth_password(session, username, pass);
+    rc = libssh2_userauth_password(session, connectionInfo.user.c_str(), connectionInfo.pass.c_str());
     if (rc != 0) {
         char* errmsg;
         int errlen;
@@ -111,7 +111,7 @@ void sshConnection::threadFunction(){
     printf("Interactive shell started!\n");
 
     libssh2_session_set_blocking(session, 0);
-    thread reader(readerThreadFunc, channel);
+    jthread reader(&sshConnection::readerThreadFunc, this, channel);
 
     while (running.load()) {
         {
