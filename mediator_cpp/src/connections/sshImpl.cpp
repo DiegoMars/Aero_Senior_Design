@@ -12,6 +12,10 @@
 #include <ws2tcpip.h>
 #include <libssh2.h>
 
+void sleep(int time) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(time));
+}
+
 // ### Public ###
 sshConnection::sshConnection(sshConnectionInfo connectionInfo){
     this->connectionInfo = connectionInfo;
@@ -111,24 +115,24 @@ void sshConnection::threadFunction(){
     printf("Interactive shell started!\n");
 
     libssh2_session_set_blocking(session, 0);
-    jthread reader(&sshConnection::readerThreadFunc, this, channel);
+    std::jthread reader(&sshConnection::readerThreadFunc, this, channel);
 
     while (running.load()) {
         {
-            lock_guard<mutex> lock(sshMutex);
-            string toSend = "ls\n";
+            std::lock_guard<std::mutex> lock(sshMutex);
+            std::string toSend = "ls\n";
             libssh2_channel_write(channel, toSend.c_str(), toSend.size());
         }
-        this_thread::sleep_for(chrono::milliseconds(20));
+        sleep(20);
         {
-            lock_guard<mutex> lock(sshMutex);
-            string toSend = "exit\n";
+            std::lock_guard<std::mutex> lock(sshMutex);
+            std::string toSend = "exit\n";
             libssh2_channel_write(channel, toSend.c_str(), toSend.size());
         }
         break;
     }
     while (running.load()) {
-        this_thread::sleep_for(chrono::milliseconds(20));
+        sleep(20);
     }
 
     reader.join();
@@ -162,7 +166,7 @@ void sshConnection::readerThreadFunc(LIBSSH2_CHANNEL* channel){
     while (running.load()){
         ssize_t n;
         {
-            lock_guard<mutex> lock(sshMutex);
+            std::lock_guard<std::mutex> lock(sshMutex);
             n = libssh2_channel_read(channel, buf, sizeof(buf));
         } // releases lock after this
 
@@ -173,11 +177,11 @@ void sshConnection::readerThreadFunc(LIBSSH2_CHANNEL* channel){
         }
 
         if (n == LIBSSH2_ERROR_EAGAIN) {
-            this_thread::sleep_for(chrono::milliseconds(20));
+            sleep(20);
             continue;
         }
 
-        lock_guard<mutex> lock(sshMutex);
+        std::lock_guard<std::mutex> lock(sshMutex);
         if (libssh2_channel_eof(channel)) {
             printf("[remote shell closed]\n");
             running.store(false);
