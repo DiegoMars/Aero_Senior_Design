@@ -63,7 +63,7 @@ void sshConnection::threadFunction(){
 
     // This could be a little finicky, so give time between code runs
     libssh2_init(0);
-    LIBSSH2_SESSION* session = libssh2_session_init();
+    session = libssh2_session_init(); // From the private field
     if (!session) {
         printf("libssh2_session_init failed\n");
         return;
@@ -90,7 +90,7 @@ void sshConnection::threadFunction(){
         // return 1;
     }
 
-    LIBSSH2_CHANNEL* channel = libssh2_channel_open_session(session);
+    channel = libssh2_channel_open_session(session); // From the private field
     if (!channel) {
         printf("channel_open_session failed\n");
         return;
@@ -115,7 +115,7 @@ void sshConnection::threadFunction(){
     printf("Interactive shell started!\n");
 
     libssh2_session_set_blocking(session, 0);
-    std::jthread reader(&sshConnection::readerThreadFunc, this, channel);
+    std::jthread reader(&sshConnection::readerThreadFunc, this);
 
     while (running.load()) {
         {
@@ -161,7 +161,8 @@ void sshConnection::printWinsockError(const char* func) {
     LocalFree(msgBuf);
 }
 
-void sshConnection::readerThreadFunc(LIBSSH2_CHANNEL* channel){
+void sshConnection::readerThreadFunc(){
+    // channel here is from the private field
     char buf[4096];
     while (running.load()){
         ssize_t n;

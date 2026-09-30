@@ -10,6 +10,7 @@ find_package(libssh2 CONFIG REQUIRED)
 add_executable(mediator_cpp
     src/main.cpp
     src/connections/sshImpl.cpp
+    # src/drivers/PayloadImpl.cpp
 )
 
 target_link_libraries(mediator_cpp

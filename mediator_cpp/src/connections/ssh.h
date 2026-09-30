@@ -18,13 +18,24 @@ struct sshConnectionInfo {
 class sshConnection {
 private:
     std::mutex sshMutex;
-    std::atomic<bool> running{true};
+    std::atomic<bool> running{true}; // for the channel
+    std::atomic<bool> connected{false}; // for the shell
     sshConnectionInfo connectionInfo;
+    LIBSSH2_SESSION* session = nullptr;
+    LIBSSH2_CHANNEL* channel = nullptr;
+
     void printWinsockError(const char* func);
-    void readerThreadFunc(LIBSSH2_CHANNEL* channel);
+    void readerThreadFunc();
+
 public:
     sshConnection(sshConnectionInfo connectionInfo);
-    void threadFunction();
+    ~sshConnection();
+    void threadFunction();  // Will start a socket, connect, starts the shell and reader function,
+                            // then awats commands
+                            // Will eventually be renamed to "start()"
+    bool sendCommand(const std::string& command);
+    bool isConnected() const { return connected.load(); }
+    void stop();
 };
 
 #endif
