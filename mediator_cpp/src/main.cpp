@@ -22,7 +22,7 @@ int main() {
         username,
         pass
     };
-    sshConnection *sshThing = new sshConnection(connectionInfo);
-    jthread runningConnection(&sshConnection::threadFunction, sshThing);
+    sshConnection sshThing(connectionInfo);
+    jthread runningConnection(&sshConnection::start, &sshThing);
     runningConnection.join();
 }

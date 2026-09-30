@@ -4,7 +4,9 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+#include <thread>
 #include <libssh2.h>
+#include <winsock2.h>
 
 // Structures
 struct sshConnectionInfo {
@@ -18,23 +20,24 @@ struct sshConnectionInfo {
 class sshConnection {
 private:
     std::mutex sshMutex;
-    std::atomic<bool> running{true}; // for the channel
-    std::atomic<bool> connected{false}; // for the shell
+    std::atomic<bool> running{false};
     sshConnectionInfo connectionInfo;
+
+    SOCKET sock = INVALID_SOCKET;
     LIBSSH2_SESSION* session = nullptr;
     LIBSSH2_CHANNEL* channel = nullptr;
+    std::jthread reader;
 
     void printWinsockError(const char* func);
-    void readerThreadFunc();
+    void readerFunc();
 
 public:
     sshConnection(sshConnectionInfo connectionInfo);
     ~sshConnection();
-    void threadFunction();  // Will start a socket, connect, starts the shell and reader function,
-                            // then awats commands
-                            // Will eventually be renamed to "start()"
+    void start();  // Will start a socket, connect, starts the shell and reader function,
+                            // then awaits commands
     bool sendCommand(const std::string& command);
-    bool isConnected() const { return connected.load(); }
+    bool isConnected() const { return running.load(); }
     void stop();
 };
 

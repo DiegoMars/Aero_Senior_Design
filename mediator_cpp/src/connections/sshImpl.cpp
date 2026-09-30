@@ -6,8 +6,9 @@
 // #include <iostream>
 // #include <string>
 #include <mutex>
-#include <thread> // Remember to use jthreads over threads
+#include <thread>
 #include <atomic>
+#include <format>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <libssh2.h>
@@ -21,7 +22,11 @@ sshConnection::sshConnection(sshConnectionInfo connectionInfo){
     this->connectionInfo = connectionInfo;
 }
 
-void sshConnection::threadFunction(){
+// sshConnection::~sshConnection() {
+//     stop();
+// }
+
+void sshConnection::start(){
     WSADATA wsaData;
     int iResult;
 
@@ -46,7 +51,8 @@ void sshConnection::threadFunction(){
         // return 1;
     }
 
-    SOCKET sock = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    // From private field
+    sock = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (sock == INVALID_SOCKET) {
         printWinsockError("socket");
         return;
@@ -112,25 +118,19 @@ void sshConnection::threadFunction(){
         return;
         // return 1;
     }
+    running.store(true);
+    libssh2_session_set_blocking(session, 0);
     printf("Interactive shell started!\n");
 
-    libssh2_session_set_blocking(session, 0);
-    std::jthread reader(&sshConnection::readerThreadFunc, this);
+    // From the private reader
+    reader = std::jthread(&sshConnection::readerFunc, this);
 
-    while (running.load()) {
-        {
-            std::lock_guard<std::mutex> lock(sshMutex);
-            std::string toSend = "ls\n";
-            libssh2_channel_write(channel, toSend.c_str(), toSend.size());
-        }
-        sleep(20);
-        {
-            std::lock_guard<std::mutex> lock(sshMutex);
-            std::string toSend = "exit\n";
-            libssh2_channel_write(channel, toSend.c_str(), toSend.size());
-        }
-        break;
-    }
+    // while (running.load()) {
+    //     sendCommand("ls");
+    //     sleep(20);
+    //     sendCommand("exit");
+    //     break;
+    // }
     while (running.load()) {
         sleep(20);
     }
@@ -149,6 +149,22 @@ void sshConnection::threadFunction(){
     printf("Cleaned up\n");
 }
 
+bool sshConnection::sendCommand(const std::string& command) {
+    bool value = isConnected();
+    printf("Send command: connected = %d\n", value);
+    if (value) {
+        std::lock_guard<std::mutex> lock(sshMutex);
+        std::string toSend = std::format("{}\n", command);
+        libssh2_channel_write(channel, toSend.c_str(), toSend.size());
+        return true;
+    }
+    return false;
+}
+
+void sshConnection::stop() {
+
+}
+
 // ### Private ###
 void sshConnection::printWinsockError(const char* func) {
     int err = WSAGetLastError();
@@ -161,7 +177,7 @@ void sshConnection::printWinsockError(const char* func) {
     LocalFree(msgBuf);
 }
 
-void sshConnection::readerThreadFunc(){
+void sshConnection::readerFunc(){
     // channel here is from the private field
     char buf[4096];
     while (running.load()){
