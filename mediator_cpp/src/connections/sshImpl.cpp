@@ -16,8 +16,10 @@ void sleep(int time) {
 }
 
 // ### Public ###
-sshConnection::sshConnection(sshConnectionInfo connectionInfo){
+sshConnection::sshConnection(sshConnectionInfo connectionInfo,
+                             TerminalOutput* output){
     this->connectionInfo = connectionInfo;
+    this->output = output;
 }
 
 sshConnection::~sshConnection() {
@@ -27,15 +29,17 @@ sshConnection::~sshConnection() {
 void sshConnection::start(){
     WSADATA wsaData;
     int iResult;
+    std::string print;
 
     // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
     if (iResult != 0) {
-        printf("WSAStartup failed: %d\n", iResult);
-        return; // Need some way to deal with errors from threads
-        // return 1;
+        print = std::format("WSAStartup failed: {}\n", iResult);
+        pipePrint("ssh: base", print);
+        return;
     }
-    printf("WSAStartup succeeded!\n");
+    print = std::format("WSAStartup succeeded!\n");
+    pipePrint("ssh: base", print);
 
     // resolve "host" into an actual IP address
     struct addrinfo hints{};
@@ -44,9 +48,9 @@ void sshConnection::start(){
     hints.ai_socktype = SOCK_STREAM; // TCP
     iResult = getaddrinfo(connectionInfo.hostName.c_str(), "22", &hints, &result);
     if (iResult != 0) {
-        printf("getaddrinfo failed: %d (%s)\n", iResult, gai_strerrorA(iResult));
+        print = std::format("getaddrinfo failed: {} ({})\n", iResult, gai_strerrorA(iResult));
+        pipePrint("ssh: base", print);
         return;
-        // return 1;
     }
 
     // From private field
@@ -56,7 +60,8 @@ void sshConnection::start(){
         return;
         // return 1;
     }
-    printf("Sock created!\n");
+    print = std::format("Sock created!\n");
+    pipePrint("ssh: base", print);
 
     iResult = connect(sock, result->ai_addr, result->ai_addrlen);
     if (iResult != 0) {
@@ -69,19 +74,23 @@ void sshConnection::start(){
     libssh2_init(0);
     session = libssh2_session_init(); // From the private field
     if (!session) {
-        printf("libssh2_session_init failed\n");
+        print = std::format("libssh2_session_init failed\n");
+        pipePrint("ssh: base", print);
         return;
         // return 1;
     }
-    printf("Session Started!\n");
+    print = std::format("Session Started!\n");
+    pipePrint("ssh: base", print);
 
     int rc = libssh2_session_handshake(session, sock);
     if (rc != 0) {
-        printf("handshake failed: %d\n", rc);
+        print = std::format("handshake failed: {}\n", rc);
+        pipePrint("ssh: base", print);
         return;
         // return 1;
     }
-    printf("Session handshake succeeded!\n");
+    print = std::format("Session handshake succeeded!\n");
+    pipePrint("ssh: base", print);
 
     // Use the sshConnectionInfo struct here
     rc = libssh2_userauth_password(session, connectionInfo.user.c_str(), connectionInfo.pass.c_str());
@@ -89,36 +98,42 @@ void sshConnection::start(){
         char* errmsg;
         int errlen;
         libssh2_session_last_error(session, &errmsg, &errlen, 0);
-        printf("auth failed: %s\n", errmsg);
+        print = std::format("auth failed: {}\n", errmsg);
+        pipePrint("ssh: base", print);
         return;
         // return 1;
     }
 
     channel = libssh2_channel_open_session(session); // From the private field
     if (!channel) {
-        printf("channel_open_session failed\n");
+        print = std::format("channel_open_session failed\n");
+        pipePrint("ssh: base", print);
         return;
         // return 1;
     }
-    printf("Channel Opened!\n");
+    print = std::format("Channel Opened!\n");
+    pipePrint("ssh: base", print);
 
     // Pseudo channel for persistance
     rc = libssh2_channel_request_pty(channel, "xterm");
     if (rc != 0) {
-        printf("request_pty failed: %d\n", rc);
+        print = std::format("request_pty failed: {}\n", rc);
+        pipePrint("ssh: base", print);
         return;
         // return 1;
     }
 
     rc = libssh2_channel_shell(channel);
     if (rc != 0) {
-        printf("channel_shell failed: %d\n", rc);
+        print = std::format("channel_shell failed: {}\n", rc);
+        pipePrint("ssh: base", print);
         return;
         // return 1;
     }
     running.store(true);
     libssh2_session_set_blocking(session, 0);
-    printf("Interactive shell started!\n");
+    print = std::format("Interactive shell started!\n");
+    pipePrint("ssh: base", print);
 
     // From the private reader
     reader = std::jthread(&sshConnection::readerFunc, this);
@@ -135,8 +150,10 @@ void sshConnection::start(){
 }
 
 bool sshConnection::sendCommand(const std::string& command) {
+    std::string print;
     if (!isConnected()) {
-        printf("Send command: not connected\n");
+        print = std::format("Send command: not connected\n");
+        pipePrint("ssh: base", print);
         return false;
     }
     std::string toSend = std::format("{}\n", command);
@@ -211,6 +228,8 @@ void sshConnection::printWinsockError(const char* func) {
 void sshConnection::readerFunc(){
     // channel here is from the private field
     char buf[4096];
+    std::string lineAccumulator;
+
     while (running.load()){
         ssize_t n;
         {
@@ -219,9 +238,23 @@ void sshConnection::readerFunc(){
         } // releases lock after this
 
         if (n > 0) {
-            fwrite(buf, 1, n, stdout);
-            fflush(stdout);
+            lineAccumulator.append(buf, n);
+
+            size_t pos;
+            while ((pos = lineAccumulator.find("\n")) != std::string::npos) {
+                std::string line = lineAccumulator.substr(0, pos);
+                if (!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+                if (output){
+                    output->pushLine("ssh: Psuedo", line);
+                }
+                lineAccumulator.erase(0, pos+1);
+            }
             continue;
+            // fwrite(buf, 1, n, stdout);
+            // fflush(stdout);
+            // continue;
         }
 
         if (n == LIBSSH2_ERROR_EAGAIN) {
@@ -231,9 +264,18 @@ void sshConnection::readerFunc(){
 
         std::lock_guard<std::mutex> lock(sshMutex);
         if (libssh2_channel_eof(channel)) {
+            if (output && !lineAccumulator.empty()){
+                output->pushLine("ssh: terminal", lineAccumulator);
+            }
             printf("[remote shell closed]\n");
             running.store(false);
             break;
         }
+    }
+}
+
+void sshConnection::pipePrint(std::string where, std::string value) {
+    if (output) {
+        output->pushLine(where, value);
     }
 }

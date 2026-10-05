@@ -11,7 +11,8 @@ private:
     std::jthread connectionThread;
 
 public:
-    explicit PayloadSshRoute(sshConnectionInfo connectionInfo);
+    explicit PayloadSshRoute(sshConnectionInfo connectionInfo,
+                             TerminalOutput* output);
     ~PayloadSshRoute() override;
 
     void connect() override;

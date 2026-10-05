@@ -1,6 +1,7 @@
 #ifndef H_SSH
 #define H_SSH
 
+#include "TerminalOutput.h"
 #include <string>
 #include <mutex>
 #include <atomic>
@@ -22,6 +23,7 @@ private:
     std::mutex sshMutex;
     std::atomic<bool> running{false};
     sshConnectionInfo connectionInfo;
+    TerminalOutput* output = nullptr;
 
     SOCKET sock = INVALID_SOCKET;
     LIBSSH2_SESSION* session = nullptr;
@@ -30,9 +32,11 @@ private:
 
     void printWinsockError(const char* func);
     void readerFunc();
+    void pipePrint(std::string where, std::string value);
 
 public:
-    sshConnection(sshConnectionInfo connectionInfo);
+    sshConnection(sshConnectionInfo connectionInfo,
+                  TerminalOutput* output);
     ~sshConnection();
     void start();  // Will start a socket, connect, starts the shell and reader function,
                             // then awaits commands

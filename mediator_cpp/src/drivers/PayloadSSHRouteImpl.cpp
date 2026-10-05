@@ -2,7 +2,7 @@
 #include "../connections/ssh.h"
 #include <thread>
 
-PayloadSshRoute::PayloadSshRoute(sshConnectionInfo connectionInfo) : connection(connectionInfo) {
+PayloadSshRoute::PayloadSshRoute(sshConnectionInfo connectionInfo, TerminalOutput* output) : connection(connectionInfo, output) {
     // Nothing here, the header already handles initialization
 }
 
