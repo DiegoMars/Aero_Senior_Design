@@ -22,9 +22,9 @@ sshConnection::sshConnection(sshConnectionInfo connectionInfo){
     this->connectionInfo = connectionInfo;
 }
 
-// sshConnection::~sshConnection() {
-//     stop();
-// }
+sshConnection::~sshConnection() {
+    stop();
+}
 
 void sshConnection::start(){
     WSADATA wsaData;
@@ -134,35 +134,68 @@ void sshConnection::start(){
     while (running.load()) {
         sleep(20);
     }
-
-    reader.join();
-
-    // Clean Up
-    libssh2_channel_close(channel);
-    libssh2_channel_free(channel);
-
-    libssh2_session_disconnect(session, "done");
-    libssh2_session_free(session);
-
-    closesocket(sock);
-    WSACleanup();
-    printf("Cleaned up\n");
 }
 
 bool sshConnection::sendCommand(const std::string& command) {
-    bool value = isConnected();
-    printf("Send command: connected = %d\n", value);
-    if (value) {
-        std::lock_guard<std::mutex> lock(sshMutex);
-        std::string toSend = std::format("{}\n", command);
-        libssh2_channel_write(channel, toSend.c_str(), toSend.size());
-        return true;
+    if (!isConnected()) {
+        printf("Send command: not connected\n");
+        return false;
     }
-    return false;
+    std::string toSend = std::format("{}\n", command);
+    size_t totalWritten = 0;
+    ssize_t n;
+
+    while (totalWritten < toSend.size()) {
+        {
+            // Lock and attempt to write to channel
+            std::lock_guard<std::mutex> lock(sshMutex);
+            n = libssh2_channel_write(channel,
+                                      toSend.c_str() + totalWritten,
+                                      toSend.size() - totalWritten
+                                      );
+        }
+        if (n == LIBSSH2_ERROR_EAGAIN) {
+            sleep(20);
+            continue; // Retry
+        }
+        if (n < 0) {
+            return false;
+        }
+        totalWritten += static_cast<size_t>(n);
+    }
+    return true;
+
 }
 
 void sshConnection::stop() {
+    auto t0 = std::chrono::steady_clock::now();
+    auto mark = [&](const char* label) {
+        auto now = std::chrono::steady_clock::now();
+        printf("[stop] %s at +%lldms\n", label,
+               (long long)std::chrono::duration_cast<std::chrono::milliseconds>(now - t0).count());
+    };
 
+    if (isConnected()) {
+        sendCommand("exit");
+        mark("sent exit");
+        int timeout = 2000, waited = 0;
+        while (running.load() && timeout > waited) { sleep(20); waited += 20; }
+        mark("wait loop done");
+        running.store(false);
+    }
+
+    if (reader.joinable()) reader.join();
+    mark("reader joined");
+
+    if (channel) { libssh2_channel_close(channel); libssh2_channel_free(channel); channel = nullptr; }
+    mark("channel closed/freed");
+
+    if (session) { libssh2_session_disconnect(session, "done"); libssh2_session_free(session); session = nullptr; }
+    mark("session disconnected/freed");
+
+    if (sock != INVALID_SOCKET) { closesocket(sock); sock = INVALID_SOCKET; }
+    WSACleanup();
+    mark("socket/winsock cleaned");
 }
 
 // ### Private ###

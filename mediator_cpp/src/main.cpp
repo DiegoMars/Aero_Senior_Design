@@ -23,6 +23,15 @@ int main() {
         pass
     };
     sshConnection sshThing(connectionInfo);
+
     jthread runningConnection(&sshConnection::start, &sshThing);
+
+    this_thread::sleep_for(chrono::seconds(3));
+    if (sshThing.isConnected()) {
+        sshThing.sendCommand("ls");
+        this_thread::sleep_for(chrono::seconds(1));
+        sshThing.stop();
+    }
+
     runningConnection.join();
 }
