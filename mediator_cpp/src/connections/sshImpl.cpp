@@ -3,8 +3,6 @@
 #endif
 
 #include "ssh.h"
-// #include <iostream>
-// #include <string>
 #include <mutex>
 #include <thread>
 #include <atomic>

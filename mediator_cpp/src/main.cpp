@@ -2,12 +2,10 @@
 // #include "connections/MAVLink.h"
 #include "connections/ssh.h"
 // #include "drivers/Payload.h"
+#include "drivers/PayloadSSHRoute.h"
 // #include "drivers/Plane.h"
 
 #include <thread>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <libssh2.h>
 using namespace std;
 
 // Change this to whatever you are using, will eventually be able to change through the GUI
@@ -22,16 +20,11 @@ int main() {
         username,
         pass
     };
-    sshConnection sshThing(connectionInfo);
-
-    jthread runningConnection(&sshConnection::start, &sshThing);
+    PayloadSshRoute route(connectionInfo);
+    route.connect();
 
     this_thread::sleep_for(chrono::seconds(3));
-    if (sshThing.isConnected()) {
-        sshThing.sendCommand("ls");
-        this_thread::sleep_for(chrono::seconds(1));
-        sshThing.stop();
+    if (route.isConnected()) {
+        route.testing();
     }
-
-    runningConnection.join();
 }
