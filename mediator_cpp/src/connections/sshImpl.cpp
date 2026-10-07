@@ -34,11 +34,11 @@ void sshConnection::start(){
     // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
     if (iResult != 0) {
-        print = std::format("WSAStartup failed: {}\n", iResult);
+        print = std::format("WSAStartup failed: {}", iResult);
         pipePrint("ssh: base", print);
         return;
     }
-    print = std::format("WSAStartup succeeded!\n");
+    print = std::format("WSAStartup succeeded!");
     pipePrint("ssh: base", print);
 
     // resolve "host" into an actual IP address
@@ -60,7 +60,7 @@ void sshConnection::start(){
         return;
         // return 1;
     }
-    print = std::format("Sock created!\n");
+    print = std::format("Sock created!");
     pipePrint("ssh: base", print);
 
     iResult = connect(sock, result->ai_addr, result->ai_addrlen);
@@ -79,7 +79,7 @@ void sshConnection::start(){
         return;
         // return 1;
     }
-    print = std::format("Session Started!\n");
+    print = std::format("Session Started!");
     pipePrint("ssh: base", print);
 
     int rc = libssh2_session_handshake(session, sock);
@@ -89,7 +89,7 @@ void sshConnection::start(){
         return;
         // return 1;
     }
-    print = std::format("Session handshake succeeded!\n");
+    print = std::format("Session handshake succeeded!");
     pipePrint("ssh: base", print);
 
     // Use the sshConnectionInfo struct here
@@ -111,7 +111,7 @@ void sshConnection::start(){
         return;
         // return 1;
     }
-    print = std::format("Channel Opened!\n");
+    print = std::format("Channel Opened!");
     pipePrint("ssh: base", print);
 
     // Pseudo channel for persistance
@@ -132,7 +132,7 @@ void sshConnection::start(){
     }
     running.store(true);
     libssh2_session_set_blocking(session, 0);
-    print = std::format("Interactive shell started!\n");
+    print = std::format("Interactive shell started!");
     pipePrint("ssh: base", print);
 
     // From the private reader
@@ -150,10 +150,8 @@ void sshConnection::start(){
 }
 
 bool sshConnection::sendCommand(const std::string& command) {
-    std::string print;
     if (!isConnected()) {
-        print = std::format("Send command: not connected\n");
-        pipePrint("ssh: base", print);
+        printf("Send command: not connected\n");
         return false;
     }
     std::string toSend = std::format("{}\n", command);
@@ -188,6 +186,10 @@ void sshConnection::stop() {
         auto now = std::chrono::steady_clock::now();
         printf("[stop] %s at +%lldms\n", label,
                (long long)std::chrono::duration_cast<std::chrono::milliseconds>(now - t0).count());
+
+        // I THINK this causes a deadlock. Need to figure out in the future how to fix
+        // std::string print = std::format("[stop] {} at +{}ms\n", label, (long long)std::chrono::duration_cast<std::chrono::milliseconds>(now - t0).count());
+        // pipePrint("ssh: base", print);
     };
 
     if (isConnected()) {

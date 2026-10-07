@@ -29,7 +29,6 @@ int main() {
     if (route.isConnected()) {
         route.testing();
     }
-    route.disconnect();
 
     for (int i = 0; i < 10; ++i) {
         this_thread::sleep_for(chrono::milliseconds(500));
